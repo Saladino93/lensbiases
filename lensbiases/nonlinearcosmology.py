@@ -9,9 +9,7 @@ In particular for definition of kNL and pars for smoothing the slope of the powe
 
 import numpy as np
 
-import cosmo
-
-import nonlinearmodels as nlm
+from . import cosmo, nonlinearmodels as nlm
 
 from scipy import optimize as sopt, interpolate as interp
 
@@ -19,22 +17,26 @@ import findiff
 
 from typing import Callable
 
+GM = "GM"
+SC = "SC"
+TR = "TR"
+
+models = [GM, SC, TR]
 
 class NonLinear(cosmo.Cosmology):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        zm = np.logspace(-9, np.log10(1089), 140)
-        zm = np.append(0, zm)
-
         self.kNLzf = self._compute_NL_scale_function(self.zs, self.PKlin.P)
         self.kNLz = self.kNLzf(self.zs)
 
-        self.nslopef = self._compute_slope(self.PKlin.P)
+        self.nslopef = self._compute_slope(self.PKlin)
 
-        self.s8f = self._compute_s8(self.zs, self.s8)
+        self.s8f = self._interpolate_s8(self.zm, self.s8)
 
-        self.getfuncs = self._process_NL_models(zm, self.s8f, self.Q, self.kNLzf, self.nslopef)
+        self.getfuncs = self._process_NL_models(self.zm, self.s8f, self.Q, self.kNLzf, self.nslopef)
+
+        self.models = models
 
     @staticmethod
     def Q(x):
@@ -64,7 +66,7 @@ class NonLinear(cosmo.Cosmology):
         kgrid = np.log(np.logspace(-5, 2, 1000))
         zgrid = np.append(0, np.logspace(-5, 3, 1000))
         
-        Pgrid = np.log(PL(zgrid, np.exp(kgrid), grid = True))
+        Pgrid = np.log(PL.P(zgrid, np.exp(kgrid), grid = True))
 
         dkgrid = kgrid[1]-kgrid[0]
         #another way would just to have a differentiable P...
@@ -113,8 +115,8 @@ class NonLinear(cosmo.Cosmology):
         zmmesh, ksmesh = np.meshgrid(zm, ks, indexing = 'ij')
         fit_funcs = {}
         for model in ['GM', 'SC']:
-            fit_funcs[model] = [interp.RectBivariateSpline(zm, ks, fun(zmmesh, ksmesh)) for fun in nlm.get_afuncs_form_coeffs_for_interp(model, s8, Q, kNLzf, nefff)]
-        
+            fit_funcs[model] = [interp.RectBivariateSpline(zm, ks, fun(zmmesh, ksmesh)) for fun in nlm.get_afuncs_form_coeffs_for_interp(model, s8, Q, nefff, kNLzf)]
+
         def get_afuncs_form_coeffs(model):
             return fit_funcs[model]
         

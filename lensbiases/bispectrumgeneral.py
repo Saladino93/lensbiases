@@ -2,7 +2,7 @@
 Module to get the perturbation theory tree level bispectrum from different models.
 """
 
-import nonlinearcosmology as nlc
+from .import nonlinearcosmology as nlc
 
 import numpy as np
 

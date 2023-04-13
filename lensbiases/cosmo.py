@@ -12,7 +12,7 @@ import scipy.interpolate as sinterp
 
 
 
-class Cosmo(object):
+class Cosmology(object):
     def __init__(self, H0:float, ombh2:float, omch2:float, As:float, ns:float, mnu:float = 0, num_massive_neutrinos:float = 0, tau:float = 0.0925, RECFAST_fudge: float = 1.14, halofit_version: str = 'takahashi'):
         pars = camb.CAMBparams()
         ommh2 = ombh2+omch2
@@ -79,9 +79,10 @@ class Cosmo(object):
             hubble_units = False, k_hunit = False, kmax = kmax, k_per_logint = None,
             var1 = var1, var2 = var2, zmax = self.zs[-1])
         
-        #zm = np.logspace(-9, np.log10(1089), 140)
-        #zm = np.append(0, zm)
-        #pars.set_matter_power(redshifts = zm, kmax = kmax)
-        #results = camb.get_results(pars)
-        
-        self.s8 = np.array(self.results.get_sigma8()[::-1])
+
+        zm = np.logspace(-9, np.log10(1089), 140)
+        zm = np.append(0, zm)
+        self.pars.set_matter_power(redshifts = zm, kmax = kmax)
+        results = camb.get_results(self.pars)
+        self.s8 = np.array(results.get_sigma8()[::-1])
+        self.zm = zm

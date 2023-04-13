@@ -4,11 +4,14 @@ Gets the lensing bispectrum from different models.
 
 import numpy as np
 
-import bispectrumgeneral as bg
+from . import bispectrumgeneral as bg
 
 from angularcls import windows, cosmoconstants
 
 import scipy.interpolate as interp, scipy.integrate as sinteg
+
+from . import utils
+
 
 
 class BispectrumLensing(bg.Bispectrum3D):
@@ -27,14 +30,7 @@ class BispectrumLensing(bg.Bispectrum3D):
 
     def bispectrum_matter_2d(self, l1, l2, l3, theta12, theta13, theta23, z, model = 'TR'):
         return self.bispectrum_matter(l1, l2, l3, theta12, theta13, theta23, z, model = model)
-    
-    @np.vectorize
-    def bispectrum_k_with_angles(self, l1, l2, l3, angle12, angle13, angle23, model = 'TR', maxiter = 100, miniter = 50, rtol = 1e-12):
-        assert l1.shape == l2.shape == l3.shape == angle12.shape == angle13.shape == angle23.shape
-        bispectrum_at_ells_of_chi = lambda chi: chi**(-4)*self.Wkk(chi)**3*self.bispectrum_matter(l1/chi, l2/chi, l3/chi, angle12, angle13, angle23, self.zofchi(chi), model = model)
-        #return sinteg.quadrature(bispectrum_at_ells_of_chi, 0, integrated_bispectrum.chistar, maxiter = 50, rtol = 1e-8)[0]
-        return sinteg.quadrature(bispectrum_at_ells_of_chi, 1e-12, self.chistar, maxiter = maxiter, miniter = miniter, rtol = rtol)[0]
-    
+
     @staticmethod
     def ktophi_bispec(l1, l2, l3):
         return 8/(l1*l2*l3)**2
@@ -47,20 +43,33 @@ class BispectrumLensing(bg.Bispectrum3D):
     @staticmethod
     def get_angle_cos12(L1, L2, L3):
         return (L1**2+L2**2-L3**2)/(2*L1*L2)
+    
+    @utils.vectorize(otypes = [float], signature = "(), (), (), (), (), (), (), ()-> ()", excluded = ['self', 'model'])
+    def bispectrum_k_with_angles(self, l1, l2, l3, angle12, angle13, angle23, model = 'TR'):
+        assert l1.shape == l2.shape == l3.shape == angle12.shape == angle13.shape == angle23.shape
+        bispectrum_at_ells_of_chi = lambda chi: chi**(-4)*self.Wkk(chi)**3*self.bispectrum_matter(l1/chi, l2/chi, l3/chi, angle12, angle13, angle23, self.zofchi(chi), model = model)
+        #return sinteg.quadrature(bispectrum_at_ells_of_chi, 0, integrated_bispectrum.chistar, maxiter = 50, rtol = 1e-8)[0]
+        return self.integrate(bispectrum_at_ells_of_chi, 1e-12, self.chistar)
 
-    def bispectrum_phi_with_angles(self, l1, l2, l3, angle12, angle13, angle23, model = 'TR', maxiter = 100, miniter = 50, rtol = 1e-12):
+
+    def bispectrum_phi_with_angles(self, l1, l2, l3, angle12, angle13, angle23, model = 'TR'):
         factor = self.ktophi_bispec(l1, l2, l3)
-        return factor*self.bispectrum_k(l1, l2, l3, angle12, angle13, angle23, model = model, maxiter = maxiter, miniter = miniter, rtol = rtol)
+        return factor*self.bispectrum_k_with_angles(l1, l2, l3, angle12, angle13, angle23, model)
     
     
     def bispectrum_equilateral(self, l: np.ndarray, model: str):
-        angle12, angle13, angle23 = np.pi/3, np.pi/3, np.pi/3
-        return self.bispectrum_k_with_angles(l, l, l, angle12, angle13, angle23, model = model)
+        ones = np.ones_like(l)
+        angle12, angle13, angle23 = np.pi/3*ones, np.pi/3*ones, np.pi/3*ones
+        return self.bispectrum_k_with_angles(l, l, l, angle12, angle13, angle23, model)
     
-    def bispectrum_k(self, l1, l2, l3, model = 'TR', maxiter = 100, miniter = 50, rtol = 1e-12):
+    def bispectrum_k(self, l1, l2, l3, model = 'TR'):
         angle12, angle13, angle23 = self.get_angle_12(l1, l2, l3), self.get_angle_12(l1, l3, l2), self.get_angle_12(l2, l3, l1)
-        return self.bispectrum_k_with_angles(l1, l2, l3, angle12, angle13, angle23, model = model, maxiter = maxiter, miniter = miniter, rtol = rtol)
+        return self.bispectrum_k_with_angles(l1, l2, l3, angle12, angle13, angle23, model = model)
 
-    def bispectrum_phi(self, l1, l2, l3, model = 'TR', maxiter = 100, miniter = 50, rtol = 1e-12):
+    def bispectrum_phi(self, l1, l2, l3, model = 'TR'):
         angle12, angle13, angle23 = self.get_angle_12(l1, l2, l3), self.get_angle_12(l1, l3, l2), self.get_angle_12(l2, l3, l1)
-        return self.bispectrum_phi_with_angles(l1, l2, l3, angle12, angle13, angle23, model = model, maxiter = maxiter, miniter = miniter, rtol = rtol)
+        return self.bispectrum_phi_with_angles(l1, l2, l3, angle12, angle13, angle23, model = model)
+    
+    @staticmethod
+    def integrate(function, a, b, args = (), maxiter = 1000, miniter = 50, rtol = 1e-12):
+        return sinteg.quadrature(function, a, b, args, maxiter = maxiter, miniter = miniter, rtol = rtol)[0]
