@@ -80,6 +80,11 @@ class Cosmology(object):
             var1 = var1, var2 = var2, zmax = self.zs[-1])
         
 
+        self.PKW = camb.get_matter_power_interpolator(self.pars, nonlinear = True,
+            hubble_units = False, k_hunit = False, kmax = kmax, k_per_logint = None,
+            var1 = cmodel.Transfer_Weyl, var2 = cmodel.Transfer_Weyl, zmax = self.zs[-1])
+        
+
         zm = np.logspace(-9, np.log10(1089), 140)
         zm = np.append(0, zm)
         self.pars.set_matter_power(redshifts = zm, kmax = kmax)
