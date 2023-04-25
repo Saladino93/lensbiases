@@ -1,5 +1,7 @@
 """
 Just an interface for camb.
+
+TODO: implement general cosmology class, in particular one where can take derivatives of the power spectrum. This might be interesting to make Fisher matrices for n32.
 """
 
 import camb
