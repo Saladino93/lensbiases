@@ -18,8 +18,7 @@ from tqdm import tqdm
 @vegas.batchintegrand
 class cmb_sky:
     def __init__(self, lmax = 4000, lmin = 10, 
-                gradientf = None, Wsinterp = None,
-                totalf = None, almcf = None):
+                gradientf = None, totalf = None):
 
         self.lmax = lmax
         self.lmin = lmin
@@ -27,10 +26,7 @@ class cmb_sky:
         self.gradientf = gradientf
 
         self.totalf = totalf
-        
-        self.Wsinterp = Wsinterp
 
-        self.almcf = almcf
 
     @staticmethod
     def dotbatch(a, b):
@@ -126,51 +122,29 @@ class f_n32_base(f_batch):
 
         productA1 = -l5_dot_l1*l5_dot_l3*hX_l5_l2*hY_l5_l4*cl5_XY*gXY
         productC1 = l2_dot_l3*l1_dot_l2*(gXY*hY_l2_l4+gYX*hX_l2_l4)*Cl2*1/2
-        productD1 = -2*l1_dot_l3*l1_dot_l2*gXY*Cl2
 
         born_term = 0.
-        W1 = self.Wsinterp(l1) if self.itr > 0 else 1
-        W3 = self.Wsinterp(l3) if self.itr > 0 else 1
-
-        factor = 1. if self.itr == 0 else np.nan_to_num((1-W1)*(1-W3))
-        factorC = factor
-        factorD = 1
-
-        productA1 *= factor
-        productC1 *= factorC
-        productD1 *= factorD
 
         bispectrum_result = b3n.bispec_phi_general(l1, l3, LL, index)
-        bispectrum_total = bispectrum_result+born_term
 
         common = l1*l2*bispectrum_result/(2*np.pi)**4
 
         A1 = productA1*common
         C1 = productC1*common
-        D1 = productD1*common
 
-        result = A1+C1+D1
+        result = A1+C1
 
-        return {"B": result, "A1": A1, "C1": C1, "D1": D1}
+        return {"B": result, "A1": A1, "C1": C1}
 
 
-def main():
+def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise: float = 1., beam: float = 1.
+         , lmin: int = 10, lmax: int = 4000, Ls = np.concatenate((np.arange(10, 500, 50), np.arange(500, 3500, 150)))):
 
     #settings
-    bpmodel = "GM"
     indices = {"TR": 0, "SC": 1, "GM": 2}
     index = indices[bpmodel]
 
-    qe_key = "ptt"
-
-    noise, beam = 1., 1.
-
     delcls_true = np.load(f"delcls_true_{qe_key}.npy", allow_pickle = True)
-
-    pps = [d["pp"] for d in delcls_true]
-
-    N0s_biased = np.load(f"N0s_biased_{qe_key}.npy", allow_pickle = True)
-    N1s_biased = np.load(f"N1s_biased_{qe_key}.npy", allow_pickle = True)
 
     gradients = np.load(f"gradients_{qe_key}.npy", allow_pickle = True)
 
@@ -179,54 +153,30 @@ def main():
 
     almc_functions = [interpolate.interp1d(Lsextended, A, fill_value = 0., bounds_error = False) for A in ALMCSextended]
 
-    Ntotal = [N0+N1 for N0, N1 in zip(N0s_biased, N1s_biased)]
-    Wflist = [np.nan_to_num(pps[0][:N.size]/(pps[0][:N.size]+N)) for N in Ntotal]
-
     ls = np.arange(0, len(gradients[0]))
 
     gradientfs = [interpolate.interp1d(ls, gradient, fill_value = 0., bounds_error = False) for gradient in gradients]
         
-    Wsinterps = [interpolate.interp1d(np.arange(0, len(W)), W, fill_value = 0., bounds_error = False) for W in Wflist]
-
     ls = np.arange(0, len(delcls_true[0]["tt"]))
     noise_component = ti.get_noise(ls, noise, beam) #constant among iterations
     totalfs = [interpolate.interp1d(ls, delcls["tt"]+noise_component, fill_value = 1e10, bounds_error = False) for delcls in delcls_true]
 
-    lmin, lmax = 10, 4000
-
     integ = vegas.Integrator([[lmin, lmax], [lmin, lmax], [0, 2*np.pi], [0, 2*np.pi]], nhcube_batch = 8000, nproc = 8)#6000, 4 |||nhcube_batch = 8000, nproc = 8
 
-    integ_1 = vegas.Integrator([[lmin, lmax], [0, 2*np.pi]], nhcube_batch = 2000, nproc = 4)
-
     nitn, neval = 4e2, 600
-    #nitn, neval = 10, 100
 
-    Ls = np.arange(10, 500, 50)
-    Ls = np.concatenate((Ls, np.arange(500, 3500, 150)))
-
-    itr = 1
-
-    #keys = ["B", "A1", "C1", "D1"]
-    #NTOT = {k: [] for k in keys}
+    itr = 0
 
     def get_result(L):
-        #integrand = f_n32_base(L, index = index, itr = itr, lmin = lmin, lmax = lmax,
-        #                    gradientf = gradientfs[itr], Wsinterp = Wsinterps[itr-1] if itr > 0 else None, totalf = totalfs[itr])
-        #result = integ(integrand, nitn = nitn, neval = neval)
-
-        integrand = f_n32_gradient_GA(L, index = index, itr = itr, lmin = lmin, lmax = lmax,
-                            gradientf = gradientfs[itr], Wsinterp = Wsinterps[itr-1] if itr > 0 else None, 
-                            totalf = totalfs[itr], almcf = almc_functions[itr])
+        integrand = f_n32_base(L, index = index, itr = itr, lmin = lmin, lmax = lmax,
+                            gradientf = gradientfs[itr], totalf = totalfs[itr])
         result = integ(integrand, nitn = nitn, neval = neval)
 
-        #for k in result.keys():
-        #    NTOT[k] += [result[k].mean]
         return [[result[k].mean for k in result.keys()]]
 
-    #results = np.array([get_result(L) for L in tqdm(Ls)])
     results = np.vstack([get_result(L) for L in tqdm(Ls)])
 
-    np.savetxt("base_n32_magn_term_GA.txt", np.c_[Ls, results])
+    np.savetxt(f"{out_name}.txt", np.c_[Ls, results])
 
 if __name__ == '__main__':
     print(timeit(lambda: main(), number = 1))
