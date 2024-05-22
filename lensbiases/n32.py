@@ -4,15 +4,37 @@ import numpy as np
 
 import numpy as np
 
-import bispectrum_3D_numba as b3n
-
-import temperatureinfo as ti
+from lensbiases import temperatureinfo as ti, bispectrum_3D_numba as b3n
 
 from scipy import interpolate
 
 from timeit import timeit
 
 from tqdm import tqdm
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--out_name", type = str, default = "n32")
+parser.add_argument("--inputdir", type = str, default = "numbaproducts")
+parser.add_argument("--bpmodel", type = str, default = "GM")
+parser.add_argument("--qe_key", type = str, default = "ptt")
+parser.add_argument("--noise", type = float, default = 1.)
+parser.add_argument("--beam", type = float, default = 1.)
+parser.add_argument("--lmin", type = int, default = 10)
+parser.add_argument("--lmax", type = int, default = 4000)
+
+args = parser.parse_args()
+out_name = args.out_name
+bpmodel = args.bpmodel
+qe_key = args.qe_key
+noise = args.noise
+beam = args.beam
+lmin = args.lmin
+lmax = args.lmax
+
+path = args.inputdir
+bispec_phi_general = b3n.bispectrum_3D_numba(path)
 
 
 @vegas.batchintegrand
@@ -125,7 +147,7 @@ class f_n32_base(f_batch):
 
         born_term = 0.
 
-        bispectrum_result = b3n.bispec_phi_general(l1, l3, LL, index)
+        bispectrum_result = bispec_phi_general(l1, l3, LL, index)
 
         common = l1*l2*bispectrum_result/(2*np.pi)**4
 
@@ -138,7 +160,7 @@ class f_n32_base(f_batch):
 
 
 def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise: float = 1., beam: float = 1.
-         , lmin: int = 10, lmax: int = 4000, Ls = np.concatenate((np.arange(10, 500, 50), np.arange(500, 3500, 150)))):
+         , lmin: int = 10, lmax: int = 4000, Ls = np.concatenate((np.arange(10, 500, 50.), np.arange(500, 3500, 200.)))):
 
     #settings
     indices = {"TR": 0, "SC": 1, "GM": 2}
@@ -167,6 +189,8 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
 
     itr = 0
 
+    Ls = Ls.astype(float)
+
     def get_result(L):
         integrand = f_n32_base(L, index = index, itr = itr, lmin = lmin, lmax = lmax,
                             gradientf = gradientfs[itr], totalf = totalfs[itr])
@@ -179,5 +203,6 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
     np.savetxt(f"{out_name}.txt", np.c_[Ls, results])
 
 if __name__ == '__main__':
-    print(timeit(lambda: main(), number = 1))
+    main(out_name = out_name, bpmodel = bpmodel, qe_key = qe_key, noise = noise, beam = beam, lmin = lmin, lmax = lmax)
+    #print(timeit(lambda: , number = 1))
     #main()

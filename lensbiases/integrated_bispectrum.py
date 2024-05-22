@@ -17,6 +17,8 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
                       zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0):
 
     outpath = pathlib.Path(outpath)
+    print("Path for products is", outpath)
+    
     if not outpath.exists():
         outpath.mkdir(exist_ok = True)
 
@@ -144,9 +146,9 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
         gp = nodes(grid)
         N = int(np.sqrt(gp.shape[0]))
         values = function(10**gp[:,0], 10**gp[:,1]).reshape((N, N))
-        np.savetxt(f"numbaproducts/{name}_matter_power.txt", values)
+        np.savetxt(outpath/f"{name}_matter_power.txt", values)
 
-    np.savetxt("numbaproducts/z_k_matter_powers.txt", gp)
+    np.savetxt(outpath/"z_k_matter_powers.txt", gp)
 
     #from Antony Lewis' code, 
     #https://github.com/cmbant/notebooks/blob/master/PostBorn.ipynb
