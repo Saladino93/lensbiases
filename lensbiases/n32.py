@@ -5,6 +5,8 @@ import numpy as np
 import numpy as np
 
 from lensbiases import temperatureinfo as ti, bispectrum_3D_numba as b3n
+from lensbiases import integrated_pb as pb
+
 
 from scipy import interpolate
 
@@ -35,6 +37,7 @@ lmax = args.lmax
 
 path = args.inputdir
 bispec_phi_general = b3n.bispectrum_3D_numba(path)
+bispec_pb = pb.get_pb_bispectrum()
 
 
 @vegas.batchintegrand
@@ -145,18 +148,25 @@ class f_n32_base(f_batch):
         productA1 = -l5_dot_l1*l5_dot_l3*hX_l5_l2*hY_l5_l4*cl5_XY*gXY
         productC1 = l2_dot_l3*l1_dot_l2*(gXY*hY_l2_l4+gYX*hX_l2_l4)*Cl2*1/2
 
-        born_term = 0.
+        bispectrum_postborn_result = bispec_pb(l1, l3, LL)
 
         bispectrum_result = bispec_phi_general(l1, l3, LL, index)
 
         common = l1*l2*bispectrum_result/(2*np.pi)**4
+        common_postborn = l1*l3*bispectrum_postborn_result/(2*np.pi)**4
 
         A1 = productA1*common
         C1 = productC1*common
 
-        result = A1+C1
+        A1_postborn = productA1*common_postborn
+        C1_postborn = productC1*common_postborn
 
-        return {"B": result, "A1": A1, "C1": C1}
+        result = A1+C1
+        result_postborn = A1_postborn+C1_postborn
+
+        total = result+result_postborn
+
+        return {"TOT": total, "B": result, "PB": result_postborn, "A1": A1, "C1": C1}
 
 
 def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise: float = 1., beam: float = 1.
@@ -175,6 +185,8 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
 
     almc_functions = [interpolate.interp1d(Lsextended, A, fill_value = 0., bounds_error = False) for A in ALMCSextended]
 
+    almc_QE = almc_functions[0]
+
     ls = np.arange(0, len(gradients[0]))
 
     gradientfs = [interpolate.interp1d(ls, gradient, fill_value = 0., bounds_error = False) for gradient in gradients]
@@ -185,7 +197,7 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
 
     integ = vegas.Integrator([[lmin, lmax], [lmin, lmax], [0, 2*np.pi], [0, 2*np.pi]], nhcube_batch = 8000, nproc = 8)#6000, 4 |||nhcube_batch = 8000, nproc = 8
 
-    nitn, neval = 4e2, 600
+    nitn, neval = 8e2, 1000
 
     itr = 0
 
@@ -203,6 +215,7 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
     np.savetxt(f"{out_name}.txt", np.c_[Ls, results])
 
 if __name__ == '__main__':
+    print("Configuration: ", args)
     main(out_name = out_name, bpmodel = bpmodel, qe_key = qe_key, noise = noise, beam = beam, lmin = lmin, lmax = lmax)
     #print(timeit(lambda: , number = 1))
     #main()

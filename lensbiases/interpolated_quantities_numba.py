@@ -15,6 +15,7 @@ def InterpolatedQuantitiesNumba(productsdir = pathlib.Path("numbaproducts")):
 
     chikk, Wkkarr = np.loadtxt(productsdir / "Wkk.txt", unpack = True)
 
+
     chi_precalculated, z_precalculated = np.loadtxt(productsdir / "zs.txt", unpack = True)
 
     zKNL, kNLz = np.loadtxt(productsdir / "kNL.txt", unpack = True)
@@ -30,6 +31,13 @@ def InterpolatedQuantitiesNumba(productsdir = pathlib.Path("numbaproducts")):
     NN = int(np.sqrt(grid2d.shape[0]))
 
     grid = UCGrid((minlogz, maxlogz, NN), (minlogk, maxlogk, NN))
+
+    #minlogchi, minlogl = grid2d_l.min(axis = 0)
+    #maxlogchi, maxlogl = grid2d_l.max(axis = 0)
+    #NN = int(np.sqrt(grid2d_l.shape[0]))
+    #Wkk_l_dependent_grid = np.loadtxt(productsdir / "Wkk_l_dependent.txt")
+    #grid2d_l = np.loadtxt("numbaproducts/chi_l_Wkk.txt")
+    #grid_l = UCGrid((minlogchi, maxlogchi, NN), (minlogl, maxlogl, NN))
 
     name = names[0]
     valuesP = np.loadtxt(productsdir/f"{name}_matter_power.txt")
@@ -62,6 +70,10 @@ def InterpolatedQuantitiesNumba(productsdir = pathlib.Path("numbaproducts")):
     @jit(nopython = True)
     def Wkk(newchis):
         return np.interp(newchis, chikk, Wkkarr)
+
+    @jit(nopython = True)
+    def Wkk_l_dependent(newchis, l): 
+        return eval_linear(grid_l, Wkk_l_dependent_grid, np.log10(np.array([newchis, l])).T, xto.NEAREST)
 
     @jit(nopython = True)
     def kNLzf(z):

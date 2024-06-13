@@ -9,7 +9,7 @@ import itertools
 import scipy.integrate as sinteg
 
 
-def bispectrum_3D_numba(path = "numbaproducts", only_bispec_general: bool = True):
+def bispectrum_3D_numba(path = "numbaproducts", window = None, only_bispec_general: bool = True):
 
     P2D, Plin2D, nefff, integrate, zofchi, Wkk, kNLzf, s8, eval_linear_numba, Q = iqn.InterpolatedQuantitiesNumba(path)
     WA, WB, WC = Wkk, Wkk, Wkk
@@ -385,17 +385,6 @@ def bispectrum_3D_numba(path = "numbaproducts", only_bispec_general: bool = True
             model = "GM"
         return bispec_general_l_dependent_window(l1, l2, l3, model)*factor
 
-    @jit(nopython = True, fastmath = True)
-    def bispec_phi_general_non_vec(l1, l2, l3, modelint):
-        factor = 8/(l1**2*l2**2*l3**2)
-        if modelint == 0:
-            model = "TR"
-        elif modelint == 1:
-            model = "SC"
-        elif modelint == 2:
-            model = "GM"
-        return bispec_general(l1, l2, l3, model)*factor
-
 
     @jit(nopython = True, fastmath = True)#, error_model = "numpy") #, parallel = True)
     def bispec_general_l_dependent_window(l1, l2, l3, model):
@@ -405,29 +394,14 @@ def bispectrum_3D_numba(path = "numbaproducts", only_bispec_general: bool = True
         #for i, x in enumerate(xsgauss):
         for i in prange(xsgauss.size):
             x = xsgauss[i]
-            bispec_arr[i] = bispectrum_matter_cos_general((l1+0.5)/x, (l2+0.5)/x, (l3+0.5)/x, cangle12, cangle13, cangle23, iqn.zofchi(x), model)
-        chipow_4_times_Wkk3_pre_calc = xsgauss**(-4)*iqn.Wkk_l_dependent(xsgauss, l1)*iqn.Wkk_l_dependent(xsgauss, l2)*iqn.Wkk_l_dependent(xsgauss, l3)
+            bispec_arr[i] = bispectrum_matter_cos_general((l1+0.5)/x, (l2+0.5)/x, (l3+0.5)/x, cangle12, cangle13, cangle23, zofchi(x), model)
+        chipow_4_times_Wkk3_pre_calc = xsgauss**(-4)*window(xsgauss, l1)*window(xsgauss, l2)*window(xsgauss, l3)
         somma = np.dot(chipow_4_times_Wkk3_pre_calc*bispec_arr, wsgauss)
         return somma
 
 
-    vectorize([float64(float64, float64, float64)])
-    jit(nopython = True, fastmath = True)
-    def bispec_check_quadrature(l1, l2, l3, Nquadrature):
-        
-        xsgauss, wsgauss = gaussxw(1e-5, chistar, Nquadrature)
-
-        chipow_4_times_Wkk3_pre_calc = xsgauss**(-4)*WA(xsgauss)*WB(xsgauss)*WC(xsgauss)
-
-        cangle12, cangle13, cangle23 = get_angle_cos12(l1, l2, l3), get_angle_cos12(l1, l3, l2), get_angle_cos12(l2, l3, l1)
-        bispec_arr = np.empty(xsgauss.size)
-        #for i, x in enumerate(xsgauss):
-        for i in prange(xsgauss.size):
-            x = xsgauss[i]
-            bispec_arr[i] = bispectrum_matter_cos_TR((l1+0.5)/x, (l2+0.5)/x, (l3+0.5)/x, cangle12, cangle13, cangle23, zofchi(x))
-        return np.dot(chipow_4_times_Wkk3_pre_calc*bispec_arr, wsgauss)*8/(l1**2*l2**2*l3**2)
     
     if only_bispec_general:
-        return bispec_phi_general
+        return bispec_phi_general, bispec_phi_general_l_dependent_window
     else:
         return bispec_phi_TR, bispec_phi_GM, bispec_phi_general, bispec_phi_general_non_vec, bispec_check_quadrature, bispec_phi_TR_non_vec, bispec_phi_TR_non_vec_for_k

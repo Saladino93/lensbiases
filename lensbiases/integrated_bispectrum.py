@@ -14,7 +14,8 @@ from interpolation.splines import extrap_options as xto
 
 def generate_products(outpath = pathlib.Path("numbaproducts"), 
                       H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
-                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0):
+                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0,
+                      window_function = windows.cmblensingwindow_ofchi, kwargs_window = {}):
 
     outpath = pathlib.Path(outpath)
     print("Path for products is", outpath)
@@ -46,7 +47,7 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
 
     #For Limber result, want integration over \chi (comoving radial distance), from 0 to chi_*.
     #so get background results to find chistar, set up a range in chi, and calculate corresponding redshifts
-    results= camb.get_background(pars)
+    results = camb.get_background(pars)
     chistar = results.conformal_time(0)- results.tau_maxvis
     chis = np.linspace(0, chistar, nz)
     zs = results.redshift_at_comoving_radial_distance(chis)
@@ -74,7 +75,13 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
     zm = np.append(0, zm)
     pars.set_matter_power(redshifts = zm, kmax = kmax)
 
+    lmax_lensing = 8000
+    pars.set_for_lmax(lmax_lensing, lens_potential_accuracy = 4)
+
     results = camb.get_results(pars)
+
+    cl = results.get_lens_potential_cls(lmax = lmax_lensing, raw_cl = True)
+    np.savetxt(outpath/'clphi.txt', np.c_[np.arange(lmax_lensing+1), cl[:, 0]])
 
     s8 = np.array(results.get_sigma8()[::-1])
 
@@ -291,10 +298,11 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
     aofchis = 1/(1+zs)
     np.savetxt(outpath/'aofchis.txt', np.c_[chis, aofchis])
     np.savetxt(outpath/'zs.txt', np.c_[chis, zs])
+    np.savetxt(outpath/'Hzs.txt', np.c_[chis, zs, Hzs])
 
     zofchi = interp.interp1d(chis, zs, kind='cubic', fill_value='extrapolate', bounds_error=False)
 
-    Wkk = windows.cmblensingwindow_ofchi(chis, aofchis, H0, Omegam, interp1d = True, chistar = chistar)
+    Wkk = window_function(chis, aofchis, H0, Omegam, interp1d = True, chistar = chistar, zs = zs, **kwargs_window) #of chi
     np.savetxt(outpath/'Wkk.txt', np.c_[chis, Wkk(chis)])
 
     Wphiphiv = np.nan_to_num(-2*(chistar-chis)/(chistar*chis))
