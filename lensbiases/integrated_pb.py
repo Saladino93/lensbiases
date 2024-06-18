@@ -18,7 +18,7 @@ from camb import model as cmodel
 
 
 def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
-                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0):
+                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0, window = None):
 
     nz = 6000 #number of steps to use for the radial/redshift integration
     kmax = 100  #kmax to use
@@ -150,20 +150,33 @@ def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
     chis, gaussian_weights = gaussxw(0, chistar, Nquadrature)
     zs = results.redshift_at_comoving_radial_distance(chis)
 
-    win = (1/chis-1/chistar)**2/chis**2
     cl = np.zeros(Lprimes.shape)
     w = np.ones(chis.shape)
     cchi = cl_chi(chis, Lprimes, grid = True)
 
     M = np.zeros((Lprimes.size, Lprimes.size))
 
-    for i, l in enumerate(Lprimes):
-        k = (l+0.5)/chis
-        w[:] = 1
-        w[k < 1e-4] = 0
-        w[k >= kmax] = 0
-        cl = np.dot(gaussian_weights*w*PK.P(zs, k, grid = False)*win/k**4, cchi)
-        M[i,:] = cl*l**4 #(l*(l+1))**2
+    if window is None:
+        win = (1/chis-1/chistar)**2/chis**2 # win is basically W^{\phi}*W^{\phi} in function of chi
+        for i, l in enumerate(Lprimes):
+            k = (l+0.5)/chis
+            w[:] = 1
+            w[k < 1e-4] = 0
+            w[k >= kmax] = 0
+            cl = np.dot(gaussian_weights*w*PK.P(zs, k, grid = False)*win/k**4, cchi)
+            M[i,:] = cl*l**4 #(l*(l+1))**2
+    else:
+        win = window(chis, Lprimes)
+        for i, l in enumerate(Lprimes):
+            k = (l+0.5)/chis
+            w[:] = 1
+            w[k < 1e-4] = 0
+            w[k >= kmax] = 0
+
+            cl = np.einsum("i, ij, ij -> j", gaussian_weights*w*PK.P(zs, k, grid = False)/k**4, win, cchi)
+            
+            M[i,:] = cl*l**4
+
 
     Mf = scipy.interpolate.RectBivariateSpline(Lprimes, Lprimes, np.log(M))
     Msp = scipy.interpolate.RectBivariateSpline(Lprimes, Lprimes, M)
