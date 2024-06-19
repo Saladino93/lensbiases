@@ -3,6 +3,8 @@ Calculating biases in CMB lensing analyses.
 
 ## Usage
 
+You may want to install https://github.com/Saladino93/angularcls first.
+
 ### Bispectrum Calculations
 
 * First, set up your own cosmology. This will be used to pre-calculate several quantities.

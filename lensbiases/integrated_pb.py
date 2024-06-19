@@ -173,7 +173,7 @@ def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
             w[k < 1e-4] = 0
             w[k >= kmax] = 0
 
-            cl = np.einsum("i, ij, ij -> j", gaussian_weights*w*PK.P(zs, k, grid = False)/k**4, win, cchi)
+            cl = np.einsum("i, ij, ij -> j", gaussian_weights*w*PK.P(zs, k, grid = False)/k**4, win, cchi) if win.ndim == 2 else np.dot(gaussian_weights*w*PK.P(zs, k, grid = False)*win/k**4, cchi)
             
             M[i,:] = cl*l**4
 

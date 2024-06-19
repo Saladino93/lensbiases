@@ -11,11 +11,12 @@ from interpolation.splines import UCGrid, nodes
 from interpolation.splines import eval_linear
 from interpolation.splines import extrap_options as xto
 
+import yaml
 
 def generate_products(outpath = pathlib.Path("numbaproducts"), 
                       H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
                       zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0,
-                      window_function = windows.cmblensingwindow_ofchi, kwargs_window = {}):
+                      kwargs_window = {}):
 
     outpath = pathlib.Path(outpath)
     print("Path for products is", outpath)
@@ -26,13 +27,24 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
     nz = 6000 #number of steps to use for the radial/redshift integration
     kmax = 100  #kmax to use
 
+    cosmology = {"H0": H0, "ombh2": ombh2, "omch2": omch2, "mnu": mnu, "num_massive_neutrinos": num_massive_neutrinos, "As": str(As), "ns": ns}
+
     #First set up parameters as usual
     pars = camb.CAMBparams()
-    ommh2 = ombh2+omch2
     h = H0/100
-    Omegam = ommh2/h**2
     pars.set_cosmology(H0 = H0, ombh2 = ombh2, omch2 = omch2, mnu = mnu, num_massive_neutrinos = num_massive_neutrinos)
     pars.InitPower.set_params(As = As, ns = ns)
+
+    ommh2 = ombh2+omch2+pars.omnuh2
+    Omegam = ommh2/h**2
+
+    cosmology["Omegam"] = Omegam
+    cosmology["ommh2"] = ommh2
+    cosmology["omnuh2"] = pars.omnuh2
+
+    #save cosmology with yaml
+    with open(outpath/"cosmology.yaml", "w") as f:
+        yaml.dump(cosmology, f)
 
     # reionization and recombination 
     pars.Reion.use_optical_depth = True
@@ -77,6 +89,8 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
 
     lmax_lensing = 8000
     pars.set_for_lmax(lmax_lensing, lens_potential_accuracy = 4)
+
+    
 
     results = camb.get_results(pars)
 
@@ -300,31 +314,31 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
     np.savetxt(outpath/'zs.txt', np.c_[chis, zs])
     np.savetxt(outpath/'Hzs.txt', np.c_[chis, zs, Hzs])
 
-    zofchi = interp.interp1d(chis, zs, kind='cubic', fill_value='extrapolate', bounds_error=False)
-
-    Wkk = window_function(chis, aofchis, H0, Omegam, interp1d = True, chistar = chistar, zs = zs, **kwargs_window) #of chi
+    window_function = windows.cmblensingwindow_ofchi
+    Wkk = window_function(chis, aofchis, H0, Omegam, interp1d = True, chistar = chistar, **kwargs_window) #of chi
     np.savetxt(outpath/'Wkk.txt', np.c_[chis, Wkk(chis)])
 
-    Wphiphiv = np.nan_to_num(-2*(chistar-chis)/(chistar*chis))
-    Wphiphiv[0] = 0
-    Wphiphi = interp.interp1d(chis, Wphiphiv, bounds_error = True)#, fill_value = 'extrapolate')
+    #Wphiphiv = np.nan_to_num(-2*(chistar-chis)/(chistar*chis))
+    #Wphiphiv[0] = 0
+    #Wphiphi = interp.interp1d(chis, Wphiphiv, bounds_error = True)#, fill_value = 'extrapolate')
+
+    #zofchi = interp.interp1d(chis, zs, kind='cubic', fill_value='extrapolate', bounds_error=False)
+
+    #gammav = 3/2*H0**2*Omegam/(cosmoconstants.CSPEEDKMPERSEC**2)/aofchis
+    #gamma = interp.interp1d(chis, gammav, bounds_error = True)#, fill_value = 'extrapolate')
+
+    #def bispectrum_matter_2d(l1, l2, l3, theta12, theta13, theta23, z, model = 'TR'):
+    #    return bispectrum_matter(l1, l2, l3, theta12, theta13, theta23, z, model = model)
 
 
-    gammav = 3/2*H0**2*Omegam/(cosmoconstants.CSPEEDKMPERSEC**2)/aofchis
-    gamma = interp.interp1d(chis, gammav, bounds_error = True)#, fill_value = 'extrapolate')
+    #def integrate_bispectrum(l1, l2, l3, model = 'TR', miniter = 100):
+    #    zeros = np.zeros_like(l1)
+    #    bispectrum_at_ells_of_chi = lambda chi: -chi**2*Wphiphi(chi)**3*gamma(chi)**3/(l1*l2*l3)**2*bispectrum_matter_2d(l1/chi, l2/chi, l3/chi, zeros, zeros, zeros, zofchi(chi), model = model)
+    #    return sinteg.quadrature(bispectrum_at_ells_of_chi, 0, chistar, miniter = miniter)[0]
 
-    def bispectrum_matter_2d(l1, l2, l3, theta12, theta13, theta23, z, model = 'TR'):
-        return bispectrum_matter(l1, l2, l3, theta12, theta13, theta23, z, model = model)
+    #ls = np.arange(10, 4000, 10)
 
-
-    def integrate_bispectrum(l1, l2, l3, model = 'TR', miniter = 100):
-        zeros = np.zeros_like(l1)
-        bispectrum_at_ells_of_chi = lambda chi: -chi**2*Wphiphi(chi)**3*gamma(chi)**3/(l1*l2*l3)**2*bispectrum_matter_2d(l1/chi, l2/chi, l3/chi, zeros, zeros, zeros, zofchi(chi), model = model)
-        return sinteg.quadrature(bispectrum_at_ells_of_chi, 0, chistar, miniter = miniter)[0]
-
-    ls = np.arange(10, 4000, 10)
-
-    def integrate_bispectrum_kkk(l1, l2, l3, model = 'TR', miniter = 200):
-        zeros = np.zeros_like(l1)
-        bispectrum_at_ells_of_chi = lambda chi: chi**(-4)*Wkk(chi)**3*bispectrum_matter_2d(l1/chi, l2/chi, l3/chi, zeros, zeros, zeros, zofchi(chi), model = model)
-        return sinteg.quadrature(bispectrum_at_ells_of_chi, 0, chistar, miniter = miniter)[0]
+    #def integrate_bispectrum_kkk(l1, l2, l3, model = 'TR', miniter = 200):
+    #    zeros = np.zeros_like(l1)
+    #    bispectrum_at_ells_of_chi = lambda chi: chi**(-4)*Wkk(chi)**3*bispectrum_matter_2d(l1/chi, l2/chi, l3/chi, zeros, zeros, zeros, zofchi(chi), model = model)
+    #    return sinteg.quadrature(bispectrum_at_ells_of_chi, 0, chistar, miniter = miniter)[0]

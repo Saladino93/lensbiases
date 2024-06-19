@@ -5,7 +5,7 @@ import numpy as np
 import numpy as np
 
 from lensbiases import temperatureinfo as ti, bispectrum_3D_numba as b3n
-from lensbiases import integrated_pb as pb
+from lensbiases import integrated_pb as pb, products, windows
 
 
 from scipy import interpolate
@@ -13,6 +13,8 @@ from scipy import interpolate
 from timeit import timeit
 
 from tqdm import tqdm
+
+import pathlib
 
 import argparse
 
@@ -25,6 +27,7 @@ parser.add_argument("--noise", type = float, default = 1.)
 parser.add_argument("--beam", type = float, default = 1.)
 parser.add_argument("--lmin", type = int, default = 10)
 parser.add_argument("--lmax", type = int, default = 4000)
+parser.add_argument("--version", type = str, default = "")
 
 args = parser.parse_args()
 out_name = args.out_name
@@ -34,10 +37,28 @@ noise = args.noise
 beam = args.beam
 lmin = args.lmin
 lmax = args.lmax
+version = args.version
 
-path = args.inputdir
-bispec_phi_general = b3n.bispectrum_3D_numba(path)
-bispec_pb = pb.get_pb_bispectrum()
+path = pathlib.Path(args.inputdir)
+
+P = products.Products(path)
+
+#because of legacy code I need to track windows in chi, for kappa or phi
+#the current postborn code wants phi, while the lss code wants kappa
+kindow_function, truncated_kwindow_function, phiwindow_function, phiwindow_function_truncated = windows.get_useful_window_functions(P, zoftruncation_low = 3., zoftruncation_high = 1100.)
+
+if version == "":
+    window_lss, window_pb = None, None
+elif version == "window":
+    window_lss, window_pb = kindow_function, phiwindow_function
+elif version == "truncated":
+    window_lss, window_pb = truncated_kwindow_function, phiwindow_function_truncated
+
+
+bispec_phi_general = b3n.bispectrum_3D_numba(path, window = window_lss)
+bispec_pb = pb.get_pb_bispectrum(H0 = P.H0, ombh2 = P.ombh2, omch2 = P.omch2,
+                      As = P.As, ns = P.ns, mnu = P.mnu, num_massive_neutrinos = P.num_massive_neutrinos,
+                      window = window_pb)
 
 
 @vegas.batchintegrand
@@ -148,7 +169,7 @@ class f_n32_base(f_batch):
         productA1 = -l5_dot_l1*l5_dot_l3*hX_l5_l2*hY_l5_l4*cl5_XY*gXY
         productC1 = l2_dot_l3*l1_dot_l2*(gXY*hY_l2_l4+gYX*hX_l2_l4)*Cl2*1/2
 
-        bispectrum_postborn_result = bispec_pb(l1, l3, LL)
+        bispectrum_postborn_result = bispec_pb(l1, l3, LL)*8/(l1*l3*LL)**2 #this is in kappa and then you multuply by some factor to get phi
 
         bispectrum_result = bispec_phi_general(l1, l3, LL, index)
 
@@ -170,7 +191,8 @@ class f_n32_base(f_batch):
 
 
 def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise: float = 1., beam: float = 1.
-         , lmin: int = 10, lmax: int = 4000, Ls = np.concatenate((np.arange(10, 500, 50.), np.arange(500, 3500, 200.)))):
+         , lmin: int = 10, lmax: int = 4000, Ls = np.concatenate((np.arange(10, 500, 50.), np.arange(500, 3500, 200.))),
+         neval:int = 1000, nitn:int = 8e2, nproc:int = 8, nhcube_batch:int = 8000, version:str = ""):
 
     #settings
     indices = {"TR": 0, "SC": 1, "GM": 2}
@@ -197,8 +219,6 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
 
     integ = vegas.Integrator([[lmin, lmax], [lmin, lmax], [0, 2*np.pi], [0, 2*np.pi]], nhcube_batch = 8000, nproc = 8)#6000, 4 |||nhcube_batch = 8000, nproc = 8
 
-    nitn, neval = 8e2, 1000
-
     itr = 0
 
     Ls = Ls.astype(float)
@@ -212,10 +232,11 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
 
     results = np.vstack([get_result(L) for L in tqdm(Ls)])
 
-    np.savetxt(f"{out_name}.txt", np.c_[Ls, results])
+    version = f"_{version}" if version != "" else version
+    np.savetxt(f"../results/{out_name}{version}.txt", np.c_[Ls, results])
 
 if __name__ == '__main__':
     print("Configuration: ", args)
-    main(out_name = out_name, bpmodel = bpmodel, qe_key = qe_key, noise = noise, beam = beam, lmin = lmin, lmax = lmax)
+    main(out_name = out_name, bpmodel = bpmodel, qe_key = qe_key, noise = noise, beam = beam, lmin = lmin, lmax = lmax, version = version, neval = 500, nitn = 200)
     #print(timeit(lambda: , number = 1))
     #main()
