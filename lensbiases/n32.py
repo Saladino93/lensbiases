@@ -18,6 +18,46 @@ import pathlib
 
 import argparse
 
+
+def gauss_beam(fwhm:float, lmax:int):
+    """Gaussian beam
+
+    Parameters
+    ----------
+    fwhm : float
+        The full-width half-maximum in radians of the beam
+    lmax : int
+        Maximum multipole of the beam
+
+    Returns
+    -------
+    bl: ndarray
+        The beam transfer function from multipole 0 to lmax
+
+
+    """
+    l = np.arange(lmax + 1)
+    bl = np.exp(-0.5 * l * (l + 1) * (fwhm / np.sqrt(8.0 * np.log(2.0))) ** 2)
+    return bl
+
+def camb_clfile_gradient(fname, lmax=None):
+    """CAMB spectra (lenspotentialCls, lensedCls or tensCls types) returned as a dict of numpy arrays.
+    Args:
+        fname (str): path to CAMB output file
+        lmax (int, optional): outputs cls truncated at this multipole.
+    """
+    cols = np.loadtxt(fname).transpose()
+    ell = np.int_(cols[0])
+    if lmax is None: lmax = ell[-1]
+    assert ell[-1] >= lmax, (ell[-1], lmax)
+    cls = {k : np.zeros(lmax + 1, dtype=float) for k in ['tt', 'ee', 'bb', 'te']}
+    w = ell * (ell + 1) / (2. * np.pi)  # weights in output file
+    idc = np.where(ell <= lmax) if lmax is not None else np.arange(len(ell), dtype=int)
+    for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
+        cls[k][ell[idc]] = cols[i + 1][idc] / w[idc]
+    return cls
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--out_name", type = str, default = "n32")
 parser.add_argument("--inputdir", type = str, default = "numbaproducts")
@@ -47,18 +87,19 @@ P = products.Products(path)
 #the current postborn code wants phi, while the lss code wants kappa
 kindow_function, truncated_kwindow_function, phiwindow_function, phiwindow_function_truncated = windows.get_useful_window_functions(P, zoftruncation_low = 3., zoftruncation_high = 1100.)
 
-if version == "":
-    window_lss, window_pb = None, None
-elif version == "window":
+
+if version == "window":
     window_lss, window_pb = kindow_function, phiwindow_function
 elif version == "truncated":
     window_lss, window_pb = truncated_kwindow_function, phiwindow_function_truncated
+else:
+    window_lss, window_pb = None, None
 
 
 bispec_phi_general = b3n.bispectrum_3D_numba(path, window = window_lss)
 bispec_pb = pb.get_pb_bispectrum(H0 = P.H0, ombh2 = P.ombh2, omch2 = P.omch2,
-                      As = P.As, ns = P.ns, mnu = P.mnu, num_massive_neutrinos = P.num_massive_neutrinos,
-                      window = window_pb)
+                      As = P.As, ns = P.ns, mnu = P.mnu, num_massive_neutrinos = P.num_massive_neutrinos, tau = P.tau,
+                      windowA = window_pb)
 
 
 @vegas.batchintegrand
@@ -237,6 +278,33 @@ def main(out_name: str = "n32", bpmodel: str = "GM", qe_key: str = "ptt", noise:
 
 if __name__ == '__main__':
     print("Configuration: ", args)
-    main(out_name = out_name, bpmodel = bpmodel, qe_key = qe_key, noise = noise, beam = beam, lmin = lmin, lmax = lmax, version = version, neval = 500, nitn = 200)
-    #print(timeit(lambda: , number = 1))
-    #main()
+
+    print("Analytical normalization")
+    ###CALCULATE ANALYTICAL NORMALIZATION
+    from plancklens import qresp
+    from plancklens.utils import cli
+    from plancklens import utils
+
+    lmax_ivf, lmin_tlm, lmin_elm, lmin_blm = lmax, lmin, lmin, lmin
+    nlev_t = noise
+    nlev_p = noise*np.sqrt(2)
+    
+    transf_tlm   =  gauss_beam(beam/180 / 60 * np.pi, lmax=lmax_ivf) * (np.arange(lmax_ivf + 1) >= lmin_tlm)
+    transf_elm   =  gauss_beam(beam/180 / 60 * np.pi, lmax=lmax_ivf) * (np.arange(lmax_ivf + 1) >= lmin_elm)
+    transf_blm   =  gauss_beam(beam/180 / 60 * np.pi, lmax=lmax_ivf) * (np.arange(lmax_ivf + 1) >= lmin_blm)
+
+    cls_len = utils.camb_clfile(path/'lensedCMB_dmn1_lensedCls.dat')
+    cls_grad = camb_clfile_gradient(path/'lensedCMB_dmn1_lensedgradCls.dat')
+
+    ftl =  cli(cls_len['tt'][:lmax_ivf + 1] + (nlev_t / 180 / 60 * np.pi) ** 2 * cli(transf_tlm ** 2)) * (transf_tlm > 0)
+    fel =  cli(cls_len['ee'][:lmax_ivf + 1] + (nlev_p / 180 / 60 * np.pi) ** 2 * cli(transf_elm ** 2)) * (transf_elm > 0)
+    fbl =  cli(cls_len['bb'][:lmax_ivf + 1] + (nlev_p / 180 / 60 * np.pi) ** 2 * cli(transf_blm ** 2)) * (transf_blm > 0)
+
+    R = qresp.get_response(qe_key, lmax, 'p', cls_weight = cls_len, cls_cmb = cls_grad, fal = {'e': fel, 'b': fbl, 't': ftl}, lmax_qlm = lmax)[0]
+    version = f"_{version}" if version != "" else version
+    np.savetxt(f"../results/{out_name}{version}_norm.txt", R)
+
+
+    print("Analytical n32")
+    main(out_name = out_name, bpmodel = bpmodel, qe_key = qe_key, noise = noise, beam = beam, lmin = lmin, lmax = lmax, version = version, neval = 700, nitn = 400)
+    

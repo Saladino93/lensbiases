@@ -18,7 +18,7 @@ from camb import model as cmodel
 
 
 def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
-                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0, window = None):
+                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0, tau = None, windowA = None, windowB = None, windowC = None):
 
     nz = 6000 #number of steps to use for the radial/redshift integration
     kmax = 100  #kmax to use
@@ -28,7 +28,7 @@ def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
     ommh2 = ombh2+omch2
     h = H0/100
     Omegam = ommh2/h**2
-    pars.set_cosmology(H0 = H0, ombh2 = ombh2, omch2 = omch2, mnu = mnu, num_massive_neutrinos = num_massive_neutrinos)
+    pars.set_cosmology(H0 = H0, ombh2 = ombh2, omch2 = omch2, mnu = mnu, num_massive_neutrinos = num_massive_neutrinos, tau = tau)
     pars.InitPower.set_params(As = As, ns = ns)
 
     # reionization and recombination 
@@ -86,6 +86,9 @@ def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
     PK = camb.get_matter_power_interpolator(pars, nonlinear = True, 
         hubble_units=False, k_hunit=False, kmax=kmax,k_per_logint=None,
         var1=cmodel.Transfer_Weyl,var2=cmodel.Transfer_Weyl, zmax=1100)
+    
+    PKm = camb.get_matter_power_interpolator(pars, nonlinear = True, 
+        hubble_units=False, k_hunit=False, kmax=kmax,k_per_logint=None, zmax=1100)
 
 
     Pminterpolator = lambda z, k: PK.P(z, k, grid = False)
@@ -156,7 +159,7 @@ def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
 
     M = np.zeros((Lprimes.size, Lprimes.size))
 
-    if window is None:
+    if windowA is None:
         win = (1/chis-1/chistar)**2/chis**2 # win is basically W^{\phi}*W^{\phi} in function of chi
         for i, l in enumerate(Lprimes):
             k = (l+0.5)/chis
@@ -166,16 +169,18 @@ def get_pb_bispectrum(H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
             cl = np.dot(gaussian_weights*w*PK.P(zs, k, grid = False)*win/k**4, cchi)
             M[i,:] = cl*l**4 #(l*(l+1))**2
     else:
-        win = window(chis, Lprimes)
+        x = windowA(chis, Lprimes)
+        win = np.einsum('ab, ac -> abc', x, x) #let's use this as Wkk, this is a matrix with chi axis in common, L, L' axis in the other two
+        win = win/chis[:, None]**2 if win.ndim == 2 else win/chis 
         for i, l in enumerate(Lprimes):
             k = (l+0.5)/chis
             w[:] = 1
             w[k < 1e-4] = 0
             w[k >= kmax] = 0
-
-            cl = np.einsum("i, ij, ij -> j", gaussian_weights*w*PK.P(zs, k, grid = False)/k**4, win, cchi) if win.ndim == 2 else np.dot(gaussian_weights*w*PK.P(zs, k, grid = False)*win/k**4, cchi)
+            #NOTE: CHECK EINSUM
+            cl = np.einsum("i, ikj, ij -> j", gaussian_weights*w*PKm.P(zs, k, grid = False), win, cchi) if win.ndim == 2 else np.dot(gaussian_weights*w*PKm.P(zs, k, grid = False)*win, cchi)
             
-            M[i,:] = cl*l**4
+            M[i,:] = cl#*l**4
 
 
     Mf = scipy.interpolate.RectBivariateSpline(Lprimes, Lprimes, np.log(M))

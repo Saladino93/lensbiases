@@ -428,7 +428,7 @@ def bispectrum_3D_numba(path = "numbaproducts", only_bispec_general: bool = True
         return np.dot(chipow_4_times_Wkk3_pre_calc*bispec_arr, wsgauss)*8/(l1**2*l2**2*l3**2)
 
 
-    def get_window_dep_bispectrum(window):
+    def get_window_dep_bispectrum(windowA, windowB, windowC):
 
         @jit(nopython = True, fastmath = True)#, error_model = "numpy") #, parallel = True)
         def bispec_general_l_dependent_window(l1, l2, l3, model):
@@ -439,7 +439,7 @@ def bispectrum_3D_numba(path = "numbaproducts", only_bispec_general: bool = True
             for i in prange(xsgauss.size):
                 x = xsgauss[i]
                 bispec_arr[i] = bispectrum_matter_cos_general((l1+0.5)/x, (l2+0.5)/x, (l3+0.5)/x, cangle12, cangle13, cangle23, zofchi(x), model)
-            chipow_4_times_Wkk3_pre_calc = xsgauss**(-4)*window(xsgauss, l1)*window(xsgauss, l2)*window(xsgauss, l3)
+            chipow_4_times_Wkk3_pre_calc = xsgauss**(-4)*windowA(xsgauss, l1)*windowB(xsgauss, l2)*windowC(xsgauss, l3)
             somma = np.dot(chipow_4_times_Wkk3_pre_calc*bispec_arr, wsgauss)
             return somma
 

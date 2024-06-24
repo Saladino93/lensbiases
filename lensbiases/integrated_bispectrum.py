@@ -15,7 +15,7 @@ import yaml
 
 def generate_products(outpath = pathlib.Path("numbaproducts"), 
                       H0 = 67, ombh2 = 0.022445, omch2 = 0.1212,
-                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0,
+                      zmax_bispec = 6., As = 2.1265e-9, ns = 0.96, mnu = 0, num_massive_neutrinos = 0, tau = None,
                       kwargs_window = {}):
 
     outpath = pathlib.Path(outpath)
@@ -27,12 +27,12 @@ def generate_products(outpath = pathlib.Path("numbaproducts"),
     nz = 6000 #number of steps to use for the radial/redshift integration
     kmax = 100  #kmax to use
 
-    cosmology = {"H0": H0, "ombh2": ombh2, "omch2": omch2, "mnu": mnu, "num_massive_neutrinos": num_massive_neutrinos, "As": str(As), "ns": ns}
+    cosmology = {"H0": H0, "ombh2": ombh2, "omch2": omch2, "mnu": mnu, "num_massive_neutrinos": num_massive_neutrinos, "As": str(As), "ns": ns, "tau": tau}
 
     #First set up parameters as usual
     pars = camb.CAMBparams()
     h = H0/100
-    pars.set_cosmology(H0 = H0, ombh2 = ombh2, omch2 = omch2, mnu = mnu, num_massive_neutrinos = num_massive_neutrinos)
+    pars.set_cosmology(H0 = H0, ombh2 = ombh2, omch2 = omch2, mnu = mnu, num_massive_neutrinos = num_massive_neutrinos, tau = tau) 
     pars.InitPower.set_params(As = As, ns = ns)
 
     ommh2 = ombh2+omch2+pars.omnuh2
