@@ -38,8 +38,6 @@ class VegasLensingResponse(lr.LensingResponse):
         
         super().__init__()
 
-        self.function = function
-        self.tot_function = tot_function
         self.lmbdasin, self.lmbdacos = lu.get_sin_cos_exprs()
 
 
